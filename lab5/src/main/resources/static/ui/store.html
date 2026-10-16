@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Shop</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+    h1, h2 { color: #333; }
+    .card { background: #fff; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #007bff; color: white; }
+    button { background-color: #28a745; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+    button:hover { background-color: #218838; }
+    .btn-danger { background-color: #dc3545; }
+    .btn-danger:hover { background-color: #c82333; }
+    input, textarea { width: 100%; padding: 8px; margin: 4px 0 10px 0; box-sizing: border-box; }
+    .cart-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+
+<h1>Онлайн Магазин Товарів (Product Shop)</h1>
+
+
+<div class="card">
+  <h2>Список Товарів</h2>
+  <button onclick="loadProducts()">Оновити список</button>
+  <table id="productsTable">
+    <thead>
+    <tr>
+      <th>ID</th>
+      <th>Назва</th>
+      <th>Опис</th>
+      <th>Дії</th>
+    </tr>
+    </thead>
+    <tbody>
+
+    </tbody>
+  </table>
+</div>
+
+
+<div class="card">
+  <h2>Управління товарами (Тільки ADMIN)</h2>
+  <form id="productForm">
+    <input type="hidden" id="productId">
+    <label for="productName">Назва товару:</label>
+    <input type="text" id="productName" required>
+
+    <label for="productDescription">Опис:</label>
+    <textarea id="productDescription" rows="3"></textarea>
+
+    <button type="button" onclick="saveProduct()">Зберегти товар</button>
+    <button type="button" onclick="resetForm()" style="background-color: #6c757d;">Очистити</button>
+  </form>
+</div>
+
+
+<div class="card">
+  <h2>Кошик та Оформлення замовлення</h2>
+  <div id="cartList"></div>
+  <button onclick="placeOrder()">Оформити замовлення</button>
+</div>
+
+
+<div class="card">
+  <h2>Мої замовлення</h2>
+  <button onclick="loadMyOrders()">Отримати мої замовлення</button>
+  <div id="ordersList" style="margin-top: 10px;"></div>
+</div>
+
+<script>
+  const API_BASE = '/api';
+  let cart = [];
+
+  async function loadProducts() {
+    try {
+      const response = await fetch(`${API_BASE}/products`);
+      const products = await response.json();
+      const tbody = document.querySelector('#productsTable tbody');
+      tbody.innerHTML = '';
+
+      products.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+                        <td>${p.id}</td>
+                        <td>${p.name}</td>
+                        <td>${p.description || ''}</td>
+                        <td>
+                            <button onclick="addToCart(${p.id}, '${p.name}')">В кошик</button>
+                            <button onclick="editProduct(${p.id}, '${p.name}', '${p.description || ''}')" style="background-color: #ffc107; color: black;">Редагувати</button>
+                            <button onclick="deleteProduct(${p.id})" class="btn-danger">Видалити</button>
+                        </td>
+                    `;
+        tbody.appendChild(tr);
+      });
+    } catch (e) {
+      console.error('Помилка завантаження товарів:', e);
+    }
+  }
+
+  async function saveProduct() {
+    const id = document.getElementById('productId').value;
+    const name = document.getElementById('productName').value;
+    const description = document.getElementById('productDescription').value;
+
+    const payload = { name, description };
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `${API_BASE}/products/${id}` : `${API_BASE}/products`;
+
+    const res = await fetch(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert('Товар збережено!');
+      resetForm();
+      loadProducts();
+    } else {
+      alert('Помилка збереження. Перевірте права доступу (потрібна роль ADMIN).');
+    }
+  }
+
+  async function deleteProduct(id) {
+    if (!confirm('Видалити цей товар?')) return;
+    const res = await fetch(`${API_BASE}/products/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadProducts();
+    } else {
+      alert('Помилка видалення. Перевірте права доступу.');
+    }
+  }
+
+  function editProduct(id, name, description) {
+    document.getElementById('productId').value = id;
+    document.getElementById('productName').value = name;
+    document.getElementById('productDescription').value = description;
+  }
+
+  function resetForm() {
+    document.getElementById('productId').value = '';
+    document.getElementById('productName').value = '';
+    document.getElementById('productDescription').value = '';
+  }
+
+  function addToCart(productId, name) {
+    const existing = cart.find(item => item.productId === productId);
+    if (existing) {
+      existing.quantity++;
+    } else {
+      cart.push({ productId, productName: name, quantity: 1 });
+    }
+    renderCart();
+  }
+
+  function renderCart() {
+    const container = document.getElementById('cartList');
+    if (cart.length === 0) {
+      container.innerHTML = '<p>Кошик порожній</p>';
+      return;
+    }
+    container.innerHTML = cart.map(item => `
+                <div class="cart-item">
+                    <span>${item.productName} (Кількість: ${item.quantity})</span>
+                    <button class="btn-danger" onclick="removeFromCart(${item.productId})">Видалити</button>
+                </div>
+            `).join('');
+  }
+
+  function removeFromCart(productId) {
+    cart = cart.filter(item => item.productId !== productId);
+    renderCart();
+  }
+
+  async function placeOrder() {
+    if (cart.length === 0) {
+      alert('Кошик порожній!');
+      return;
+    }
+    const payload = {
+      items: cart.map(i => ({ productId: i.productId, quantity: i.quantity }))
+    };
+
+    const res = await fetch(`${API_BASE}/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert('Замовлення успішно створено!');
+      cart = [];
+      renderCart();
+    } else {
+      alert('Помилка при створенні замовлення.');
+    }
+  }
+
+  async function loadMyOrders() {
+    const res = await fetch(`${API_BASE}/orders/mine`);
+    if (!res.ok) {
+      alert('Не вдалося завантажити замовлення.');
+      return;
+    }
+    const orders = await res.json();
+    const container = document.getElementById('ordersList');
+    container.innerHTML = orders.map(o => `
+                <div style="border: 1px solid #ccc; padding: 8px; margin-bottom: 5px;">
+                    <strong>Замовлення #${o.id}</strong> (${o.createdAt})
+                    <ul>
+                        ${o.items.map(i => `<li>${i.productName} x${i.quantity}</li>`).join('')}
+                    </ul>
+                </div>
+            `).join('');
+  }
+
+
+  loadProducts();
+</script>
+</body>
+</html>
